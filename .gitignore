@@ -1,0 +1,5 @@
+.env
+seen.json
+checker.log
+__pycache__/
+*.pyc
