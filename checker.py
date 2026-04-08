@@ -113,6 +113,7 @@ def fetch_listings() -> list[dict]:
         price = tile.get("price", {})
         current = price.get("currentPrice", {})
         previous = price.get("previousPrice", {})
+        dims = filters.get("dimensions", {})
         listings.append({
             "part": tile.get("partNumber", ""),
             "title": title,
@@ -123,6 +124,8 @@ def fetch_listings() -> list[dict]:
             "commit": tile.get("omnitureModel", {}).get(
                 "customerCommitString", ""
             ),
+            "memory": dims.get("tsMemorySize", "").upper(),
+            "storage": dims.get("dimensionCapacity", "").upper(),
         })
 
     return listings
@@ -171,8 +174,17 @@ def format_listing(item: dict, is_new: bool) -> str:
     saving = ""
     if item["previous_price"]:
         saving = f"  (was {item['previous_price']})"
+    specs = ""
+    if item.get("memory") or item.get("storage"):
+        parts = []
+        if item.get("memory"):
+            parts.append(f"{item['memory']} RAM")
+        if item.get("storage"):
+            parts.append(f"{item['storage']} Storage")
+        specs = " · ".join(parts) + "\n"
     return (
         f"{tag}<b>{item['title']}</b>\n"
+        f"{specs}"
         f"Price: {item['price']}{saving}\n"
         f"Delivery: {item['commit']}\n"
         f"<a href=\"{item['url']}\">View on Apple Store</a>"
