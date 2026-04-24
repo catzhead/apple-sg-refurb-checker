@@ -6,7 +6,7 @@ compares against previously seen listings, and sends new ones via Telegram.
 
 Monitored products:
 - Mac mini (all)
-- MacBook Pro 14" M4 Pro with 64GB+ RAM
+- MacBook Pro 14" M4 or M5 (any variant) with 24GB+ RAM
 - Mac Studio (all)
 """
 
@@ -26,7 +26,7 @@ APPLE_BASE = "https://www.apple.com"
 APPLE_SHOP = "https://www.apple.com/sg/shop/buy-mac"
 
 # Memory sizes in GB, parsed from filter values like "64gb"
-MIN_MBP_RAM_GB = 64
+MIN_MBP_RAM_GB = 24
 
 HEADERS = {
     "User-Agent": (
@@ -104,8 +104,8 @@ def matches_filters(title: str, filters: dict) -> bool:
     if "mac studio" in t:
         return True
 
-    # MacBook Pro 14" M4 Pro with 64GB+ RAM
-    if "macbook pro" in t and "14-inch" in t and "m4 pro" in t:
+    # MacBook Pro 14" M4 or M5 (any variant) with 24GB+ RAM
+    if "macbook pro" in t and "14-inch" in t and ("m4" in t or "m5" in t):
         dims = filters.get("dimensions", {})
         ram = parse_ram_gb(dims.get("tsMemorySize", "0"))
         if ram >= MIN_MBP_RAM_GB:
