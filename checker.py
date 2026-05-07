@@ -5,9 +5,8 @@ Scrapes the Apple Singapore refurbished store for specific Mac listings,
 compares against previously seen listings, and sends new ones via Telegram.
 
 Monitored products:
-- Mac mini (all)
-- MacBook Pro 14" M4 or M5 (any variant) with 24GB+ RAM
-- Mac Studio (all)
+- MacBook Pro 14" M5 (any variant) with 1TB+ SSD
+- MacBook Air 13" M4 with 1TB+ SSD
 """
 
 import json
@@ -25,8 +24,8 @@ URL = "https://www.apple.com/sg/shop/refurbished/mac"
 APPLE_BASE = "https://www.apple.com"
 APPLE_SHOP = "https://www.apple.com/sg/shop/buy-mac"
 
-# Memory sizes in GB, parsed from filter values like "64gb"
-MIN_MBP_RAM_GB = 24
+# Storage in GB; matches values like "1tb" / "512gb". Apple uses decimal TB.
+MIN_SSD_GB = 1000
 
 HEADERS = {
     "User-Agent": (
@@ -92,24 +91,28 @@ def parse_ram_gb(mem_str: str) -> int:
     return int(m.group(1)) if m else 0
 
 
+def parse_storage_gb(s: str) -> int:
+    """Parse storage like '1tb' or '512gb' into integer GB (decimal TB)."""
+    m = re.match(r"(\d+)\s*(tb|gb)", s.lower())
+    if not m:
+        return 0
+    n = int(m.group(1))
+    return n * 1000 if m.group(2) == "tb" else n
+
+
 def matches_filters(title: str, filters: dict) -> bool:
     """Check if a listing matches our monitored products."""
     t = title.lower()
+    dims = filters.get("dimensions", {})
+    storage = parse_storage_gb(dims.get("dimensionCapacity", ""))
 
-    # Mac mini — all
-    if "mac mini" in t:
+    # MacBook Pro 14" M5 (any variant: M5 / M5 Pro / M5 Max) with 1TB+ SSD
+    if "macbook pro" in t and "14-inch" in t and "m5" in t and storage >= MIN_SSD_GB:
         return True
 
-    # Mac Studio — all
-    if "mac studio" in t:
+    # MacBook Air 13" M4 with 1TB+ SSD
+    if "macbook air" in t and "13-inch" in t and "m4" in t and storage >= MIN_SSD_GB:
         return True
-
-    # MacBook Pro 14" M4 or M5 (any variant) with 24GB+ RAM
-    if "macbook pro" in t and "14-inch" in t and ("m4" in t or "m5" in t):
-        dims = filters.get("dimensions", {})
-        ram = parse_ram_gb(dims.get("tsMemorySize", "0"))
-        if ram >= MIN_MBP_RAM_GB:
-            return True
 
     return False
 
