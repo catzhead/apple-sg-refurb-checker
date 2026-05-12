@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Apple Store SG Refurbished Mac Checker.
 
-Scrapes the Apple Singapore refurbished store for specific Mac listings,
-compares against previously seen listings, and sends new ones via Telegram.
+Scrapes the Apple Singapore refurbished store, diffs against the last
+seen list, and sends a Telegram alert when listings appear or disappear.
 
 Monitored products:
 - MacBook Air (M2 / M3 / M4) with 24GB+ RAM and 512GB+ SSD
@@ -73,16 +73,24 @@ def load_env():
                 os.environ.setdefault(key.strip(), val.strip())
 
 
-def load_seen() -> set:
-    """Load previously seen part numbers."""
-    if STATE_FILE.exists():
-        return set(json.loads(STATE_FILE.read_text()))
-    return set()
+def load_state() -> dict[str, dict]:
+    """Load the last-seen listings keyed by part number.
+
+    Legacy format was a JSON list of part numbers; load it as a dict with
+    empty item details so any items delisted before this migration render
+    as the bare part number on the first post-migration alert.
+    """
+    if not STATE_FILE.exists():
+        return {}
+    data = json.loads(STATE_FILE.read_text())
+    if isinstance(data, list):
+        return {part: {} for part in data}
+    return data
 
 
-def save_seen(part_numbers: set):
-    """Persist seen part numbers."""
-    STATE_FILE.write_text(json.dumps(sorted(part_numbers), indent=2))
+def save_state(items: dict[str, dict]):
+    """Persist currently-available listings keyed by part number."""
+    STATE_FILE.write_text(json.dumps(items, sort_keys=True, indent=2))
 
 
 def parse_ram_gb(mem_str: str) -> int:
@@ -345,9 +353,19 @@ def format_listing(item: dict, is_new: bool) -> str:
     )
 
 
+def format_delisted(part: str, item: dict) -> str:
+    """Single-line strikethrough entry for a listing that disappeared."""
+    if not item:
+        return f"❌ <s>{part}</s>"
+    title = item.get("title", part)
+    price = item.get("price", "")
+    suffix = f" — {price}" if price else ""
+    return f"❌ <s>{title}{suffix}</s>"
+
+
 def main():
     load_env()
-    seen = load_seen()
+    state = load_state()
 
     try:
         listings = fetch_listings()
@@ -355,42 +373,51 @@ def main():
         print(f"ERROR fetching listings: {e}", file=sys.stderr)
         sys.exit(1)
 
-    current_parts = {item["part"] for item in listings}
+    current = {item["part"]: item for item in listings}
+    prev_parts = set(state)
+    current_parts = set(current)
+    new_parts = current_parts - prev_parts
+    delisted_parts = prev_parts - current_parts
 
-    if not listings:
-        print("No matching listings found.")
+    if not new_parts and not delisted_parts:
+        print("No changes." if listings else "No matching listings found.")
+        save_state(current)
         return
 
-    new_parts = {item["part"] for item in listings if item["part"] not in seen}
+    price_cache = {}
+    for item in listings:
+        new_price = fetch_new_price(item, price_cache)
+        if new_price:
+            item["new_price"] = new_price
 
+    listings.sort(key=lambda x: x["price_raw"])
+
+    summary = []
     if new_parts:
-        # Fetch new-equivalent prices for all listings
-        price_cache = {}
-        for item in listings:
-            new_price = fetch_new_price(item, price_cache)
-            if new_price:
-                item["new_price"] = new_price
+        summary.append(f"{len(new_parts)} new")
+    if delisted_parts:
+        summary.append(f"{len(delisted_parts)} delisted")
+    header = (
+        f"🍎 Apple SG refurb update: {', '.join(summary)}\n"
+        f"{len(listings)} matching listing(s):\n\n"
+    )
 
-        # New items detected — send full list with new ones marked
-        listings.sort(key=lambda x: x["price_raw"])
+    body_parts = [
+        format_listing(item, item["part"] in new_parts)
+        for item in listings
+    ]
+    if delisted_parts:
+        body_parts.append("— Delisted —")
+        for part in sorted(delisted_parts):
+            body_parts.append(format_delisted(part, state.get(part, {})))
 
-        new_count = len(new_parts)
-        total = len(listings)
-        header = (
-            f"🍎 {new_count} new refurb Mac listing(s) on Apple SG!\n"
-            f"Showing all {total} matching listing(s):\n\n"
-        )
-        body = "\n\n".join(
-            format_listing(item, item["part"] in new_parts)
-            for item in listings
-        )
-        send_telegram(header + body)
-        print(f"Sent notification: {new_count} new, {total} total.")
-    else:
-        print("No new listings.")
+    send_telegram(header + "\n\n".join(body_parts))
+    print(
+        f"Sent notification: {len(new_parts)} new, "
+        f"{len(delisted_parts)} delisted, {len(listings)} total."
+    )
 
-    # Update seen: keep current + previously seen (so removed items can re-alert)
-    save_seen(seen | current_parts)
+    save_state(current)
 
 
 if __name__ == "__main__":
