@@ -5,8 +5,7 @@ Scrapes the Apple Singapore refurbished store for specific Mac listings,
 compares against previously seen listings, and sends new ones via Telegram.
 
 Monitored products:
-- MacBook Pro 14" M5 (any variant) with 1TB+ SSD
-- MacBook Air 13" M4 with 1TB+ SSD
+- MacBook Air (M2 / M3 / M4) with 24GB+ RAM and 512GB+ SSD
 """
 
 import json
@@ -25,7 +24,8 @@ APPLE_BASE = "https://www.apple.com"
 APPLE_SHOP = "https://www.apple.com/sg/shop/buy-mac"
 
 # Storage in GB; matches values like "1tb" / "512gb". Apple uses decimal TB.
-MIN_SSD_GB = 1000
+MIN_SSD_GB = 512
+MIN_MBA_RAM_GB = 24
 
 HEADERS = {
     "User-Agent": (
@@ -105,13 +105,15 @@ def matches_filters(title: str, filters: dict) -> bool:
     t = title.lower()
     dims = filters.get("dimensions", {})
     storage = parse_storage_gb(dims.get("dimensionCapacity", ""))
+    ram = parse_ram_gb(dims.get("tsMemorySize", "0"))
 
-    # MacBook Pro 14" M5 (any variant: M5 / M5 Pro / M5 Max) with 1TB+ SSD
-    if "macbook pro" in t and "14-inch" in t and "m5" in t and storage >= MIN_SSD_GB:
-        return True
-
-    # MacBook Air 13" M4 with 1TB+ SSD
-    if "macbook air" in t and "13-inch" in t and "m4" in t and storage >= MIN_SSD_GB:
+    # MacBook Air M2 / M3 / M4 with 24GB+ RAM and 512GB+ SSD
+    if (
+        "macbook air" in t
+        and ("m2" in t or "m3" in t or "m4" in t)
+        and ram >= MIN_MBA_RAM_GB
+        and storage >= MIN_SSD_GB
+    ):
         return True
 
     return False
